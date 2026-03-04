@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
@@ -15,36 +15,29 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Ugglan Ollie",
   description: "Prata med den snälla ugglan Ollie 🦉",
-
   manifest: "/manifest.webmanifest",
+};
 
-  icons: {
-    icon: "/icons/icon-192.png",
-    shortcut: "/icons/icon-192.png",
-    apple: "/icons/apple-touch-icon.png",
-  },
-
-  appleWebApp: {
-    capable: true,
-    title: "Ollie",
-    statusBarStyle: "default",
-  },
-
-  viewport: {
-    width: "device-width",
-    initialScale: 1,
-  },
-
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
   themeColor: "#f2f2f7",
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="sv">
+      <head>
+        {/* iOS Home Screen icon (viktigast) */}
+        <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+        {/* fallback favicons */}
+        <link rel="icon" href="/favicon.ico" sizes="any" />
+        <link rel="icon" type="image/png" href="/icon-192.png" />
+        {/* PWA */}
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-title" content="Ollie" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+      </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>
