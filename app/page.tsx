@@ -19,15 +19,24 @@ function uid() {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
 
+function cap(s: string) {
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();
+}
+
 function extractName(text: string): string | undefined {
-  const m = text.match(/jag heter ([a-zåäö]+)/i);
-  return m?.[1]
-    ? m[1].charAt(0).toUpperCase() + m[1].slice(1).toLowerCase()
-    : undefined;
+  const t = text.trim();
+  let m = t.match(/^\s*jag\s+heter\s+([A-Za-zÅÄÖåäö\-']{2,})/i);
+  if (m?.[1]) return cap(m[1]);
+  m = t.match(/^\s*mitt\s+namn\s+är\s+([A-Za-zÅÄÖåäö\-']{2,})/i);
+  if (m?.[1]) return cap(m[1]);
+  m = t.match(/^\s*jag\s+kallas\s+([A-Za-zÅÄÖåäö\-']{2,})/i);
+  if (m?.[1]) return cap(m[1]);
+  return undefined;
 }
 
 export default function Home() {
   const [mounted, setMounted] = useState(false);
+
   const [profile, setProfile] = useState<Profile>({});
   const profileRef = useRef<Profile>({});
 
@@ -39,110 +48,125 @@ export default function Home() {
   const typeTimerRef = useRef<number | null>(null);
 
   useEffect(() => setMounted(true), []);
-
   useEffect(() => {
     profileRef.current = profile;
   }, [profile]);
 
-  /* load saved chat */
+  // Load from localStorage
   useEffect(() => {
     if (!mounted) return;
 
+    let p: Profile = {};
+    let stored: StoredMsg[] = [];
     try {
-      const p = JSON.parse(localStorage.getItem(STORAGE_PROFILE) || "{}");
-      const m = JSON.parse(localStorage.getItem(STORAGE_MSGS) || "[]");
-
-      setProfile(p);
-
-      if (m.length) {
-        setMessages(m.map((x: StoredMsg) => ({ ...x, display: x.content })));
-      } else {
-        setMessages([
-          {
-            id: uid(),
-            role: "assistant",
-            content: "Hej, jag är Ugglan Ollie 🦉\nVad heter du?",
-            display: "Hej, jag är Ugglan Ollie 🦉\nVad heter du?",
-          },
-        ]);
-      }
+      p = JSON.parse(localStorage.getItem(STORAGE_PROFILE) || "{}");
     } catch {}
+    try {
+      stored = JSON.parse(localStorage.getItem(STORAGE_MSGS) || "[]");
+    } catch {}
+
+    setProfile(p);
+
+    if (Array.isArray(stored) && stored.length > 0) {
+      setMessages(stored.map((m) => ({ ...m, display: m.content, animate: false })));
+    } else {
+      const first = p?.name
+        ? `Hej ${p.name}! 🦉\nVad vill du prata om idag?`
+        : "Hej, jag är Ugglan Ollie 🦉\nVad heter du?";
+      setMessages([{ id: uid(), role: "assistant", content: first, display: first }]);
+    }
   }, [mounted]);
 
-  /* save chat */
+  // Persist messages
   useEffect(() => {
     if (!mounted) return;
+    try {
+      const stored: StoredMsg[] = messages.map((m) => ({ id: m.id, role: m.role, content: m.content }));
+      localStorage.setItem(STORAGE_MSGS, JSON.stringify(stored));
+    } catch {}
+  }, [mounted, messages]);
 
-    localStorage.setItem(
-      STORAGE_MSGS,
-      JSON.stringify(messages.map((m) => ({ id: m.id, role: m.role, content: m.content })))
-    );
-  }, [messages, mounted]);
-
+  // Persist profile
   useEffect(() => {
     if (!mounted) return;
-    localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
-  }, [profile, mounted]);
+    try {
+      localStorage.setItem(STORAGE_PROFILE, JSON.stringify(profile));
+    } catch {}
+  }, [mounted, profile]);
 
-  /* scroll */
+  // Auto-scroll
   useEffect(() => {
+    if (!mounted) return;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, loading]);
+  }, [mounted, messages, loading]);
 
-  /* typewriter animation */
+  // Typewriter for latest assistant message marked animate=true
   useEffect(() => {
-    if (typeTimerRef.current) clearInterval(typeTimerRef.current);
+    if (!mounted) return;
 
-    const idx = [...messages].reverse().findIndex((m) => m.animate);
+    if (typeTimerRef.current) {
+      window.clearInterval(typeTimerRef.current);
+      typeTimerRef.current = null;
+    }
+
+    const idx = [...messages].reverse().findIndex((m) => m.role === "assistant" && m.animate);
     if (idx === -1) return;
 
-    const real = messages.length - 1 - idx;
-    const msg = messages[real];
-
-    let pos = 0;
+    const realIndex = messages.length - 1 - idx;
+    const msg = messages[realIndex];
+    const full = msg.content;
+    let pos = (msg.display ?? "").length;
 
     typeTimerRef.current = window.setInterval(() => {
-      pos++;
+      pos = Math.min(pos + 1, full.length);
+      const nextDisplay = full.slice(0, pos);
 
       setMessages((prev) => {
         const copy = [...prev];
-        const cur = copy[real];
-
+        const cur = copy[realIndex];
         if (!cur) return prev;
-
-        copy[real] = {
-          ...cur,
-          display: cur.content.slice(0, pos),
-          animate: pos < cur.content.length,
-        };
-
+        copy[realIndex] = { ...cur, display: nextDisplay, animate: pos < full.length };
         return copy;
       });
 
-      if (pos >= msg.content.length && typeTimerRef.current) {
-        clearInterval(typeTimerRef.current);
+      if (pos >= full.length) {
+        if (typeTimerRef.current) {
+          window.clearInterval(typeTimerRef.current);
+          typeTimerRef.current = null;
+        }
       }
-    }, 15);
-  }, [messages]);
+    }, 14);
+
+    return () => {
+      if (typeTimerRef.current) {
+        window.clearInterval(typeTimerRef.current);
+        typeTimerRef.current = null;
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mounted, messages]);
+
+  const title = useMemo(() => (profile.name ? "Ugglan Ollie" : "Ugglan Ollie"), [profile.name]);
+
+  const animating = messages.some((m) => m.role === "assistant" && m.animate);
+  const sendDisabled = !input.trim() || loading || animating;
 
   async function send() {
-    if (!input.trim()) return;
-
     const text = input.trim();
+    if (!text || sendDisabled) return;
 
-    const userMsg: UiMsg = {
-      id: uid(),
-      role: "user",
-      content: text,
-      display: text,
-    };
+    const now = Date.now();
 
-    const newMessages = [...messages, userMsg];
-
+    // local name capture for UI memory
     const maybeName = extractName(text);
-    if (maybeName && !profile.name) {
-      setProfile((p) => ({ ...p, name: maybeName }));
+    if (maybeName && !profileRef.current.name) {
+      setProfile((p) => ({ ...p, name: maybeName, updatedAt: now }));
+    } else {
+      setProfile((p) => ({ ...p, updatedAt: now }));
     }
+
+    const userMsg: UiMsg = { id: uid(), role: "user", content: text, display: text, animate: false };
+    const newMessages = [...messages, userMsg];
 
     setMessages(newMessages);
     setInput("");
@@ -151,75 +175,58 @@ export default function Home() {
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
           memory: profileRef.current.memoryNote || "",
         }),
-        headers: { "Content-Type": "application/json" },
       });
 
       const data = await res.json();
+      const replyText = (data.text || "(tomt svar)") as string;
 
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: uid(),
-          role: "assistant",
-          content: data.text,
-          display: "",
-          animate: true,
-        },
-      ]);
-
-      if (data.memory) {
-        setProfile((p) => ({ ...p, memoryNote: data.memory }));
+      if (typeof data.memory === "string") {
+        setProfile((p) => ({ ...p, memoryNote: data.memory, updatedAt: Date.now() }));
       }
-    } catch {
+
       setMessages((prev) => [
         ...prev,
-        {
-          id: uid(),
-          role: "assistant",
-          content: "Oj! Något gick snett.",
-          display: "Oj! Något gick snett.",
-        },
+        { id: uid(), role: "assistant", content: replyText, display: "", animate: true },
       ]);
+    } catch (e: any) {
+      const msg = `Oj! Något gick snett: ${e?.message ?? "okänt fel"}`;
+      setMessages((prev) => [...prev, { id: uid(), role: "assistant", content: msg, display: msg }]);
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }
 
   function newChat() {
-    localStorage.removeItem(STORAGE_MSGS);
+    try {
+      localStorage.removeItem(STORAGE_MSGS);
+    } catch {}
 
-    setMessages([
-      {
-        id: uid(),
-        role: "assistant",
-        content: "Hej igen! Vad vill du prata om?",
-        display: "Hej igen! Vad vill du prata om?",
-      },
-    ]);
+    const p = profileRef.current;
+    const first = p?.name ? `Hej ${p.name}! 🦉\nVad vill du prata om idag?` : "Hej, jag är Ugglan Ollie 🦉\nVad heter du?";
+    setMessages([{ id: uid(), role: "assistant", content: first, display: first }]);
+    setInput("");
+    setLoading(false);
   }
 
-  function forget() {
-    localStorage.removeItem(STORAGE_MSGS);
-    localStorage.removeItem(STORAGE_PROFILE);
+  function forgetMe() {
+    try {
+      localStorage.removeItem(STORAGE_MSGS);
+      localStorage.removeItem(STORAGE_PROFILE);
+    } catch {}
 
     setProfile({});
-    setMessages([
-      {
-        id: uid(),
-        role: "assistant",
-        content: "Hej! Jag är Ugglan Ollie 🦉\nVad heter du?",
-        display: "Hej! Jag är Ugglan Ollie 🦉\nVad heter du?",
-      },
-    ]);
+    const first = "Hej, jag är Ugglan Ollie 🦉\nVad heter du?";
+    setMessages([{ id: uid(), role: "assistant", content: first, display: first }]);
+    setInput("");
+    setLoading(false);
   }
 
   if (!mounted) return null;
-
-  const disabled = !input.trim() || loading;
 
   return (
     <main
@@ -233,123 +240,200 @@ export default function Home() {
         fontFamily: "system-ui",
       }}
     >
+      <style>{`
+        .iosHeader {
+          height: 54px;
+          background: rgba(255,255,255,0.92);
+          backdrop-filter: saturate(180%) blur(16px);
+          -webkit-backdrop-filter: saturate(180%) blur(16px);
+          border-bottom: 1px solid rgba(60,60,67,0.12);
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 0 12px;
+        }
+        .iosHeaderBtn {
+          appearance: none;
+          background: transparent;
+          border: none;
+          padding: 8px 10px;
+          font-size: 16px;
+          font-weight: 700;
+          color: #007AFF;
+          cursor: pointer;
+        }
+        .iosHeaderBtn:active { opacity: 0.55; }
+        .centerTitle {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          font-weight: 800;
+          color: #111;
+        }
+        .centerTitle img {
+          width: 26px;
+          height: 26px;
+          border-radius: 999px;
+          object-fit: cover;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+          animation: ollieFloat 3.2s ease-in-out infinite;
+        }
+        @keyframes ollieFloat { 0% { transform: translateY(0px); } 50% { transform: translateY(-2px); } 100% { transform: translateY(0px); } }
+
+        .chatArea {
+          flex: 1;
+          overflow-y: auto;
+          padding: 14px 12px;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+        .row {
+          display: flex;
+          align-items: flex-end;
+          gap: 8px;
+        }
+        .row.user { justify-content: flex-end; }
+        .row.assistant { justify-content: flex-start; }
+
+        .avatarSmall {
+          width: 26px;
+          height: 26px;
+          border-radius: 999px;
+          object-fit: cover;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+          animation: ollieFloat 3.2s ease-in-out infinite;
+          flex: 0 0 auto;
+        }
+
+        .bubble {
+          max-width: 76%;
+          padding: 12px 14px;
+          border-radius: 20px;
+          font-size: 16px;
+          line-height: 1.35;
+          white-space: pre-wrap;
+          word-break: break-word;
+        }
+        .bubble.user {
+          background: #007AFF;
+          color: #fff;
+          border-bottom-right-radius: 6px;
+        }
+        .bubble.assistant {
+          background: #E5E5EA;
+          color: #111;
+          border-bottom-left-radius: 6px;
+        }
+
+        .composer {
+          background: rgba(255,255,255,0.95);
+          backdrop-filter: saturate(180%) blur(16px);
+          -webkit-backdrop-filter: saturate(180%) blur(16px);
+          border-top: 1px solid rgba(60,60,67,0.12);
+          padding: 10px 10px calc(10px + env(safe-area-inset-bottom));
+          display: flex;
+          align-items: flex-end;
+          gap: 10px;
+        }
+        .textInput {
+          flex: 1;
+          border: 1px solid rgba(60,60,67,0.24);
+          background: #fff;
+          border-radius: 20px;
+          padding: 10px 12px;
+          font-size: 16px;
+          outline: none;
+        }
+        .sendBtn {
+          width: 40px;
+          height: 40px;
+          border-radius: 999px;
+          border: none;
+          display: grid;
+          place-items: center;
+          font-size: 18px;
+          font-weight: 900;
+          color: #fff;
+          background: #007AFF;
+          cursor: pointer;
+          box-shadow: 0 6px 16px rgba(0,122,255,0.25);
+        }
+        .sendBtn:disabled {
+          background: #BBD9FF;
+          box-shadow: none;
+          cursor: not-allowed;
+        }
+        .sendBtn:active:not(:disabled) { transform: translateY(1px); opacity: 0.9; }
+
+        .typingDots { display: inline-flex; gap: 6px; align-items: center; justify-content: center; min-width: 44px; }
+        .typingDots span { width: 7px; height: 7px; border-radius: 999px; background: #7a7a7a; display: inline-block; animation: dotPulse 1s infinite; }
+        .typingDots span:nth-child(2) { animation-delay: 0.15s; }
+        .typingDots span:nth-child(3) { animation-delay: 0.3s; }
+        @keyframes dotPulse { 0% { transform: translateY(0); opacity: .45; } 30% { transform: translateY(-4px); opacity: 1; } 60% { transform: translateY(0); opacity: .6; } 100% { transform: translateY(0); opacity: .45; } }
+      `}</style>
+
       {/* header */}
-      <div
-        style={{
-          padding: 12,
-          background: "white",
-          borderBottom: "1px solid #ddd",
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-        }}
-      >
-        <button
-          onClick={forget}
-          style={{
-            background: "#1c1c1e",
-            color: "white",
-            border: "none",
-            borderRadius: 12,
-            padding: "8px 14px",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
+      <div className="iosHeader">
+        <button className="iosHeaderBtn" onClick={forgetMe}>
           Glöm mig
         </button>
 
-        <div style={{ fontWeight: 800, display: "flex", alignItems: "center", gap: 8 }}>
-          <img src="/ollie.png" style={{ width: 28 }} />
-          Ugglan Ollie
+        <div className="centerTitle" aria-label={title}>
+          <img src="/ollie.png" alt="Ollie" />
+          <span>Ugglan Ollie</span>
         </div>
 
-        <button
-          onClick={newChat}
-          style={{
-            background: "#1c1c1e",
-            color: "white",
-            border: "none",
-            borderRadius: 12,
-            padding: "8px 14px",
-            fontWeight: 700,
-            cursor: "pointer",
-          }}
-        >
+        <button className="iosHeaderBtn" onClick={newChat}>
           Ny chatt
         </button>
       </div>
 
-      {/* messages */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 16 }}>
-        {messages.map((m) => (
-          <div
-            key={m.id}
-            style={{
-              display: "flex",
-              justifyContent: m.role === "user" ? "flex-end" : "flex-start",
-              marginBottom: 10,
-            }}
-          >
-            <div
-              style={{
-                background: m.role === "user" ? "#007aff" : "#e5e5ea",
-                color: m.role === "user" ? "white" : "black",
-                padding: "12px 16px",
-                borderRadius: 20,
-                maxWidth: "75%",
-                whiteSpace: "pre-wrap",
-                fontSize: 16,
-              }}
-            >
-              {m.display ?? m.content}
+      {/* chat */}
+      <div className="chatArea">
+        {messages.map((m) => {
+          const isUser = m.role === "user";
+          const shown = isUser ? m.content : (m.display ?? m.content);
+          return (
+            <div key={m.id} className={`row ${isUser ? "user" : "assistant"}`}>
+              {!isUser && <img className="avatarSmall" src="/ollie.png" alt="Ollie" />}
+              <div className={`bubble ${isUser ? "user" : "assistant"}`}>{shown}</div>
+            </div>
+          );
+        })}
+
+        {loading && (
+          <div className="row assistant">
+            <img className="avatarSmall" src="/ollie.png" alt="Ollie" />
+            <div className="bubble assistant" style={{ padding: "10px 12px" }}>
+              <div className="typingDots">
+                <span />
+                <span />
+                <span />
+              </div>
             </div>
           </div>
-        ))}
+        )}
 
         <div ref={bottomRef} />
       </div>
 
-      {/* input */}
-      <div
-        style={{
-          padding: 12,
-          borderTop: "1px solid #ddd",
-          background: "white",
-          display: "flex",
-        }}
-      >
+      {/* composer */}
+      <div className="composer">
         <input
+          className="textInput"
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Skriv ett meddelande..."
-          style={{
-            flex: 1,
-            padding: 12,
-            borderRadius: 20,
-            border: "1px solid #ccc",
-            fontSize: 16,
-          }}
+          placeholder="iMessage…"
           onKeyDown={(e) => {
-            if (e.key === "Enter") send();
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              send();
+            }
           }}
         />
-
-        <button
-          onClick={send}
-          disabled={disabled}
-          style={{
-            marginLeft: 8,
-            padding: "12px 20px",
-            borderRadius: 20,
-            border: "none",
-            background: disabled ? "#bcdcff" : "#007aff",
-            color: "white",
-            fontWeight: 800,
-            cursor: disabled ? "not-allowed" : "pointer",
-          }}
-        >
-          Skicka
+        <button className="sendBtn" onClick={send} disabled={sendDisabled} aria-label="Skicka">
+          ↑
         </button>
       </div>
     </main>
