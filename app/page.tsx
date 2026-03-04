@@ -146,7 +146,7 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mounted, messages]);
 
-  const title = useMemo(() => (profile.name ? "Ugglan Ollie" : "Ugglan Ollie"), [profile.name]);
+  const title = useMemo(() => "Ugglan Ollie", []);
 
   const animating = messages.some((m) => m.role === "assistant" && m.animate);
   const sendDisabled = !input.trim() || loading || animating;
@@ -207,7 +207,9 @@ export default function Home() {
     } catch {}
 
     const p = profileRef.current;
-    const first = p?.name ? `Hej ${p.name}! 🦉\nVad vill du prata om idag?` : "Hej, jag är Ugglan Ollie 🦉\nVad heter du?";
+    const first = p?.name
+      ? `Hej ${p.name}! 🦉\nVad vill du prata om idag?`
+      : "Hej, jag är Ugglan Ollie 🦉\nVad heter du?";
     setMessages([{ id: uid(), role: "assistant", content: first, display: first }]);
     setInput("");
     setLoading(false);
@@ -336,6 +338,8 @@ export default function Home() {
           align-items: flex-end;
           gap: 10px;
         }
+
+        /* ✅ FIX: input text was invisible */
         .textInput {
           flex: 1;
           border: 1px solid rgba(60,60,67,0.24);
@@ -344,7 +348,15 @@ export default function Home() {
           padding: 10px 12px;
           font-size: 16px;
           outline: none;
+
+          color: #111;
+          caret-color: #007AFF;
+          -webkit-text-fill-color: #111;
         }
+        .textInput::placeholder {
+          color: rgba(60,60,67,0.6);
+        }
+
         .sendBtn {
           width: 40px;
           height: 40px;
@@ -393,7 +405,7 @@ export default function Home() {
       <div className="chatArea">
         {messages.map((m) => {
           const isUser = m.role === "user";
-          const shown = isUser ? m.content : (m.display ?? m.content);
+          const shown = isUser ? m.content : m.display ?? m.content;
           return (
             <div key={m.id} className={`row ${isUser ? "user" : "assistant"}`}>
               {!isUser && <img className="avatarSmall" src="/ollie.png" alt="Ollie" />}
