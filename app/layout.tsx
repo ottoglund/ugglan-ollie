@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import SWRegister from "./sw-register";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -15,33 +14,38 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Ugglan Ollie",
-  description: "En klok liten uggla som hjälper barn att förstå sina känslor.",
+  description: "Prata med den snälla ugglan Ollie 🦉",
+
   manifest: "/manifest.webmanifest",
+
   icons: {
     icon: "/icons/icon-192.png",
-    apple: "/icons/icon-192.png",
+    shortcut: "/icons/icon-192.png",
+    apple: "/icons/apple-touch-icon.png",
   },
+
   appleWebApp: {
     capable: true,
-    statusBarStyle: "default",
     title: "Ollie",
+    statusBarStyle: "default",
   },
+
   viewport: {
     width: "device-width",
     initialScale: 1,
-    maximumScale: 1,
   },
-  themeColor: "#ffffff",
+
+  themeColor: "#f2f2f7",
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html lang="sv">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable}`}
-        style={{ margin: 0, background: "#f2f2f7" }}
-      >
-        <SWRegister />
+      <body className={`${geistSans.variable} ${geistMono.variable}`}>
         {children}
       </body>
     </html>
